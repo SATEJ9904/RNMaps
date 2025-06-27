@@ -1,44 +1,20 @@
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, PermissionsAndroid, Platform } from 'react-native';
+import { View, Text, StyleSheet, TextInput, Button, ScrollView } from 'react-native';
 import MapView, { Marker, Polyline } from 'react-native-maps';
-import Geolocation from 'react-native-geolocation-service';
 import axios from 'axios';
 
-const GOOGLE_MAPS_APIKEY = 'YOUR_API_KEY_HERE'; // Replace with your GCP Maps API Key
+const GOOGLE_MAPS_APIKEY = 'YOUR_GOOGLE_MAPS_API_KEY_HERE'; // Replace with your real key
 
 const App = () => {
-  const [riderLocation, setRiderLocation] = useState({ latitude: 37.7749, longitude: -122.4194 }); // Example: SF
-  const [cafeLocation, setCafeLocation] = useState({ latitude: 37.7849, longitude: -122.4094 });   // Example: Nearby
-  const [customerLocation, setCustomerLocation] = useState({ latitude: 37.7949, longitude: -122.3994 }); // Example: Nearby
-  
+  const [riderLocation, setRiderLocation] = useState({ latitude: 16.7049873, longitude: 74.2432527 });
+  const [cafeLocation, setCafeLocation] = useState({ latitude: 16.708425, longitude: 74.228245 });
+  const [customerLocation, setCustomerLocation] = useState({ latitude: 16.711488, longitude: 74.226219 });
+
   const [routeCoords, setRouteCoords] = useState([]);
   const [distance, setDistance] = useState('');
   const [duration, setDuration] = useState('');
 
-  useEffect(() => {
-    requestLocationPermission();
-    getDirections();
-  }, []);
-
-  const requestLocationPermission = async () => {
-    if (Platform.OS === 'android') {
-      await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
-      );
-    }
-    Geolocation.getCurrentPosition(
-      position => {
-        setRiderLocation({
-          latitude: position.coords.latitude,
-          longitude: position.coords.longitude,
-        });
-      },
-      error => console.log(error),
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
-    );
-  };
-
-  const getDirections = async () => {
+  const handleGetRoute = async () => {
     try {
       const origin = `${riderLocation.latitude},${riderLocation.longitude}`;
       const waypoint = `${cafeLocation.latitude},${cafeLocation.longitude}`;
@@ -47,25 +23,32 @@ const App = () => {
       const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origin}&destination=${destination}&waypoints=${waypoint}&alternatives=true&key=${GOOGLE_MAPS_APIKEY}&departure_time=now`;
 
       const response = await axios.get(url);
+
       if (response.data.routes.length) {
         const points = decodePolyline(response.data.routes[0].overview_polyline.points);
         setRouteCoords(points);
-        setDistance(response.data.routes[0].legs.reduce((total, leg) => total + leg.distance.text, ''));
-        setDuration(response.data.routes[0].legs.reduce((total, leg) => total + leg.duration_in_traffic.text, ''));
+
+        const totalDistance = response.data.routes[0].legs.map(leg => leg.distance.text).join(' + ');
+        const totalDuration = response.data.routes[0].legs.map(leg => leg.duration.text).join(' + ');
+
+        setDistance(totalDistance);
+        setDuration(totalDuration);
+      } else {
+        console.log('No routes found');
       }
     } catch (error) {
-      console.log(error);
+      console.log('Error fetching directions:', error);
     }
   };
 
-  const decodePolyline = (t, e) => {
+  const decodePolyline = (t) => {
     let points = [];
     let index = 0, lat = 0, lng = 0;
 
     while (index < t.length) {
       let b, shift = 0, result = 0;
       do {
-        b = t.charAt(index++).charCodeAt(0) - 63;
+        b = t.charCodeAt(index++) - 63;
         result |= (b & 0x1f) << shift;
         shift += 5;
       } while (b >= 0x20);
@@ -75,7 +58,7 @@ const App = () => {
       shift = 0;
       result = 0;
       do {
-        b = t.charAt(index++).charCodeAt(0) - 63;
+        b = t.charCodeAt(index++) - 63;
         result |= (b & 0x1f) << shift;
         shift += 5;
       } while (b >= 0x20);
@@ -86,6 +69,27 @@ const App = () => {
     }
     return points;
   };
+
+  const renderCoordinateInputs = (label, location, setLocation) => (
+    <View style={styles.inputGroup}>
+      <Text>{label} Latitude:</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Enter Latitude"
+        keyboardType="numeric"
+        value={location.latitude.toString()}
+        onChangeText={(text) => setLocation({ ...location, latitude: parseFloat(text.trim()) })}
+      />
+      <Text>{label} Longitude:</Text>
+      <TextInput
+        style={styles.input}
+        placeholder="Enter Longitude"
+        keyboardType="numeric"
+        value={location.longitude.toString()}
+        onChangeText={(text) => setLocation({ ...location, longitude: parseFloat(text.trim()) })}
+      />
+    </View>
+  );
 
   return (
     <View style={styles.container}>
@@ -103,18 +107,47 @@ const App = () => {
         <Marker coordinate={customerLocation} title="Customer" pinColor="red" />
         <Polyline coordinates={routeCoords} strokeWidth={5} strokeColor="blue" />
       </MapView>
-      <View style={styles.info}>
-        <Text>Total Distance: {distance}</Text>
-        <Text>Estimated Time: {duration}</Text>
-      </View>
+
+      <ScrollView style={styles.form}>
+        {renderCoordinateInputs('Rider', riderLocation, setRiderLocation)}
+        {renderCoordinateInputs('Cafe', cafeLocation, setCafeLocation)}
+        {renderCoordinateInputs('Customer', customerLocation, setCustomerLocation)}
+
+        <Button title="Show Route" onPress={handleGetRoute} />
+
+        <View style={styles.info}>
+          <Text>Total Distance: {distance}</Text>
+          <Text>Estimated Time: {duration}</Text>
+        </View>
+      </ScrollView>
     </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  map: { flex: 1 },
-  info: { padding: 10, backgroundColor: '#fff' },
+  map: { flex: 2 },
+  form: {
+    flex: 1,
+    padding: 10,
+    backgroundColor: '#f2f2f2',
+  },
+  inputGroup: {
+    marginBottom: 10,
+  },
+  input: {
+    borderWidth: 1,
+    borderColor: '#ccc',
+    padding: 5,
+    marginVertical: 5,
+    borderRadius: 5,
+  },
+  info: {
+    marginTop: 10,
+    padding: 10,
+    backgroundColor: '#fff',
+    borderRadius: 5,
+  },
 });
 
 export default App;
